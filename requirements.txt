@@ -1,0 +1,8 @@
+flask
+flask-cors
+yfinance
+pandas
+requests
+beautifulsoup4
+google-generativeai
+gunicorn
