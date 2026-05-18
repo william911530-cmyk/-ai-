@@ -68,15 +68,16 @@ def clean(val):
 # ==========================================
 @app.route('/api/analyze', methods=['POST'])
 def analyze_stock():
-    req = request.json
-    symbol = req.get('symbol', '').toUpperCase()
-    ai_choice = req.get('ai_choice', 'gemini') # 'gemini' 或 'deepseek'
-
-    # 自動防呆补全台股尾碼
-    if symbol.isdigit() and len(symbol) == 4:
-        symbol += ".TW"
-
     try:
+        req = request.json
+        # 🐛 修正：Python 的大寫是 .upper()
+        symbol = req.get('symbol', '').upper()
+        ai_choice = req.get('ai_choice', 'gemini') # 'gemini' 或 'deepseek'
+
+        # 自動防呆補全台股尾碼
+        if symbol.isdigit() and len(symbol) == 4:
+            symbol += ".TW"
+
         tk = yf.Ticker(symbol)
         info = tk.info
         hist = tk.history(period="1y")
@@ -97,10 +98,10 @@ def analyze_stock():
             "div": clean(info.get('dividendYield')),
             "roe": clean(info.get('returnOnEquity')),
             "de": clean(info.get('debtToEquity')),
-            "rsi": clean(latest.get('RSI')),
-            "k": clean(latest.get('K')),
-            "d": clean(latest.get('D')),
-            "macd_hist": clean(latest.get('MACD_Hist')),
+            "rsi": clean(latest.get('RSI', None)),
+            "k": clean(latest.get('K', None)),
+            "d": clean(latest.get('D', None)),
+            "macd_hist": clean(latest.get('MACD_Hist', None)),
             "news": get_latest_news(symbol)
         }
 
@@ -146,6 +147,7 @@ def analyze_stock():
         })
 
     except Exception as e:
+        # 如果發生錯誤，回傳乾淨的 JSON 報錯給前端
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
