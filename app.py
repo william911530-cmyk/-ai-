@@ -113,7 +113,8 @@ def analyze_stock():
         try:
             if ai_choice == 'gemini':
                 # 換回最穩定的預設模型名稱
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
+               # 改用這個最通用的名稱
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-latest:generateContent?key={GEMINI_API_KEY}"
                 payload = {"contents": [{"parts": [{"text": prompt}]}]}
                 res = requests.post(url, json=payload, timeout=15) # 設定 15 秒超時
                 
