@@ -11,10 +11,10 @@ app = Flask(__name__)
 CORS(app)
 
 # ==========================================
-# 🔑 從環境變數讀取 API 金鑰 (更安全)
+# 🔑 從環境變數讀取 API 金鑰
 # ==========================================
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "你的_GEMINI_API_KEY")
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "你的_DEEPSEEK_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "未設定_GEMINI_KEY")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "未設定_DEEPSEEK_KEY")
 
 # ==========================================
 # 📊 量化特徵工程模組
@@ -60,7 +60,7 @@ def clean(val):
     return "N/A" if val is None or (isinstance(val, float) and math.isnan(val)) else round(val, 2) if isinstance(val, float) else val
 
 # ==========================================
-# ⚡ 即時串接路由器 (API Endpoint)
+# ⚡ 即時串接路由器 (防彈強化版)
 # ==========================================
 @app.route('/api/analyze', methods=['POST'])
 def analyze_stock():
@@ -72,13 +72,12 @@ def analyze_stock():
         if symbol.isdigit() and len(symbol) == 4:
             symbol += ".TW"
 
+        # 1. 抓取股票資料 (這部分就算失敗也只會報 404)
         tk = yf.Ticker(symbol)
         info = tk.info
+        hist = tk.history(period="6mo")
         
-        # 為了節省記憶體，只抓取半年數據來算指標
-        hist = tk.history(period="6mo") 
-        
-        if hist.empty: return jsonify({"error": "找不到該股票數據"}), 404
+        if hist.empty: return jsonify({"error": f"找不到股票數據: {symbol}"}), 404
         
         hist = calculate_technical_indicators(hist)
         latest = hist.iloc[-1]
@@ -108,30 +107,44 @@ def analyze_stock():
         請以繁體中文給出：1.估值點評 2.技術面趨勢 3.風險提示。
         """
 
-        ai_analysis = ""
-        
-        # 🚀 記憶體瘦身核心：直接發送 HTTP 請求給 Gemini
-        if ai_choice == 'gemini':
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
-            payload = {"contents": [{"parts": [{"text": prompt}]}]}
-            res = requests.post(url, json=payload)
-            res_json = res.json()
-            if 'candidates' in res_json:
-                ai_analysis = res_json['candidates'][0]['content']['parts'][0]['text']
-            else:
-                ai_analysis = f"Gemini API 錯誤: {res_json}"
-                
-        # DeepSeek 維持原樣
-        elif ai_choice == 'deepseek':
-            headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
-            payload = {"model": "deepseek-chat", "messages": [{"role": "user", "content": prompt}], "temperature": 0.3}
-            res = requests.post("https://api.deepseek.com/chat/completions", json=payload, headers=headers)
-            ai_analysis = res.json()['choices'][0]['message']['content']
+        ai_analysis = "AI 智腦正在罷工中..."
 
+        # 🛡️ 2. 防彈 AI 呼叫區塊：不管 AI 發生什麼事，都不能影響股票資料回傳！
+        try:
+            if ai_choice == 'gemini':
+                # 換回最穩定的預設模型名稱
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                res = requests.post(url, json=payload, timeout=15) # 設定 15 秒超時
+                
+                if res.status_code == 200:
+                    ai_analysis = res.json()['candidates'][0]['content']['parts'][0]['text']
+                else:
+                    # 如果 API 拒絕，直接把原廠錯誤印在畫面上
+                    ai_analysis = f"⚠️ Gemini 拒絕連線 (狀態碼: {res.status_code})\n詳細錯誤: {res.text}"
+                    
+            elif ai_choice == 'deepseek':
+                headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
+                payload = {"model": "deepseek-chat", "messages": [{"role": "user", "content": prompt}], "temperature": 0.3}
+                res = requests.post("https://api.deepseek.com/chat/completions", json=payload, headers=headers, timeout=15)
+                
+                if res.status_code == 200:
+                    ai_analysis = res.json()['choices'][0]['message']['content']
+                else:
+                    # DeepSeek 如果沒錢或金鑰錯誤，會在這裡被攔截印出
+                    ai_analysis = f"⚠️ DeepSeek 拒絕連線 (狀態碼: {res.status_code})\n詳細錯誤: {res.text}"
+
+        except requests.exceptions.Timeout:
+            ai_analysis = f"⚠️ {ai_choice.upper()} 伺服器回應超時，請稍後再試。"
+        except Exception as ai_e:
+            ai_analysis = f"⚠️ {ai_choice.upper()} 模組發生例外錯誤: {str(ai_e)}"
+
+        # 3. 永遠確保股票數據能成功送出
         return jsonify({"stock_data": stock_pack, "ai_analysis": ai_analysis})
 
+    # 這是最後一道防線，只有在 yfinance 抓資料發生毀滅性錯誤才會觸發
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"後端系統錯誤: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
