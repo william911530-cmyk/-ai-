@@ -4,24 +4,20 @@ import requests
 from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import google.generativeai as genai
 import math
+import os
 
 app = Flask(__name__)
-CORS(app)  # 允許前端網頁跨網域存取
+CORS(app)
 
 # ==========================================
-# 🔑 API 金鑰設定區 (本地測試先寫這，上雲端再抽離)
+# 🔑 從環境變數讀取 API 金鑰 (更安全)
 # ==========================================
-GEMINI_API_KEY = "你的_GEMINI_API_KEY"
-DEEPSEEK_API_KEY = "你的_DEEPSEEK_API_KEY"
-
-# 初始化 Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "你的_GEMINI_API_KEY")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "你的_DEEPSEEK_API_KEY")
 
 # ==========================================
-# 📊 量化特徵工程模組 (完全保留原版核心算法)
+# 📊 量化特徵工程模組
 # ==========================================
 def calculate_technical_indicators(df):
     if df.empty or len(df) < 30: return df
@@ -70,24 +66,23 @@ def clean(val):
 def analyze_stock():
     try:
         req = request.json
-        # 🐛 修正：Python 的大寫是 .upper()
         symbol = req.get('symbol', '').upper()
-        ai_choice = req.get('ai_choice', 'gemini') # 'gemini' 或 'deepseek'
+        ai_choice = req.get('ai_choice', 'gemini')
 
-        # 自動防呆補全台股尾碼
         if symbol.isdigit() and len(symbol) == 4:
             symbol += ".TW"
 
         tk = yf.Ticker(symbol)
         info = tk.info
-        hist = tk.history(period="1y")
+        
+        # 為了節省記憶體，只抓取半年數據來算指標
+        hist = tk.history(period="6mo") 
         
         if hist.empty: return jsonify({"error": "找不到該股票數據"}), 404
         
         hist = calculate_technical_indicators(hist)
         latest = hist.iloc[-1]
 
-        # 封裝所有的量化指標
         stock_pack = {
             "symbol": symbol,
             "price": clean(info.get('currentPrice', info.get('regularMarketPrice', latest['Close']))),
@@ -105,49 +100,37 @@ def analyze_stock():
             "news": get_latest_news(symbol)
         }
 
-        # 🧠 建立 AI 專用 Prompt
         prompt = f"""
-        你是一位專業的量化投資分析師。請根據以下即時提取的數據，為股票 {symbol} 撰寫一份精簡、一針見血的投資特質分析報告：
-        
-        [基本面與估值]
-        - 當前股價: {stock_pack['price']} | 52週漲跌幅: {stock_pack['change_52w']} | Beta動能: {stock_pack['beta']}
-        - 本益比 (P/E): {stock_pack['pe']} | 本益成長比 (PEG): {stock_pack['peg']} | 股息殖利率: {stock_pack['div']}
-        - 股東權益報酬率 (ROE): {stock_pack['roe']} | 債資比 (D/E): {stock_pack['de']}
-        
-        [技術面最新狀態]
-        - RSI(14): {stock_pack['rsi']} | KD指標: K={stock_pack['k']}, D={stock_pack['d']} | MACD柱狀體: {stock_pack['macd_hist']}
-        
-        [最新市場新聞摘要]
-        - {', '.join(stock_pack['news'])}
-        
-        請嚴格用「繁體中文」回答。不要講廢話，請直接給出：
-        1. 估值與財務狀況點評
-        2. 技術面買賣趨勢評判
-        3. 綜合風險提示
+        你是一位專業的量化投資分析師。請根據以下數據為股票 {symbol} 寫一份精簡分析：
+        [基本面] 股價:{stock_pack['price']} | P/E:{stock_pack['pe']} | PEG:{stock_pack['peg']} | ROE:{stock_pack['roe']}
+        [技術面] RSI:{stock_pack['rsi']} | KD:K={stock_pack['k']},D={stock_pack['d']} | MACD柱狀:{stock_pack['macd_hist']}
+        [新聞] {', '.join(stock_pack['news'])}
+        請以繁體中文給出：1.估值點評 2.技術面趨勢 3.風險提示。
         """
 
-        # 呼叫對應的智腦
         ai_analysis = ""
+        
+        # 🚀 記憶體瘦身核心：直接發送 HTTP 請求給 Gemini
         if ai_choice == 'gemini':
-            response = gemini_model.generate_content(prompt)
-            ai_analysis = response.text
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            res = requests.post(url, json=payload)
+            res_json = res.json()
+            if 'candidates' in res_json:
+                ai_analysis = res_json['candidates'][0]['content']['parts'][0]['text']
+            else:
+                ai_analysis = f"Gemini API 錯誤: {res_json}"
+                
+        # DeepSeek 維持原樣
         elif ai_choice == 'deepseek':
             headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
-            payload = {
-                "model": "deepseek-chat",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3
-            }
+            payload = {"model": "deepseek-chat", "messages": [{"role": "user", "content": prompt}], "temperature": 0.3}
             res = requests.post("https://api.deepseek.com/chat/completions", json=payload, headers=headers)
             ai_analysis = res.json()['choices'][0]['message']['content']
 
-        return jsonify({
-            "stock_data": stock_pack,
-            "ai_analysis": ai_analysis
-        })
+        return jsonify({"stock_data": stock_pack, "ai_analysis": ai_analysis})
 
     except Exception as e:
-        # 如果發生錯誤，回傳乾淨的 JSON 報錯給前端
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
