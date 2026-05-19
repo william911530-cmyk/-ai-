@@ -112,7 +112,7 @@ def analyze_stock():
         
         # 🚀 記憶體瘦身核心：直接發送 HTTP 請求給 Gemini
         if ai_choice == 'gemini':
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
             res = requests.post(url, json=payload)
             res_json = res.json()
