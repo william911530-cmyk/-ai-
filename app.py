@@ -115,7 +115,8 @@ def analyze_stock():
                 # 換回最穩定的預設模型名稱
                # 改用這個最通用的名稱
                 # 強制指定 Pro 的最新穩定節點
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-002:generateContent?key={GEMINI_API_KEY}"
+                # 將 app.py 中的 url 修改為：
+                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_API_KEY
                 payload = {"contents": [{"parts": [{"text": prompt}]}]}
                 res = requests.post(url, json=payload, timeout=15) # 設定 15 秒超時
                 
