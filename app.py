@@ -151,3 +151,12 @@ def analyze_stock():
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
+@app.route('/api/chat', methods=['POST'])
+def chat_with_nexus():
+    data = request.json
+    user_msg = data.get('message')
+    # 這裡串接你的 AI 模型 (Gemini 或 DeepSeek)
+    # 簡單模擬回傳
+    ai_reply = f"NEXUS_CORE_ANALYZING: 收到訊息 '{user_msg}'。正在調用市場數據庫..."
+    return jsonify({"reply": ai_reply})
