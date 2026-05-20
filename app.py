@@ -149,9 +149,6 @@ def analyze_stock():
     except Exception as e:
         return jsonify({"error": f"後端系統錯誤: {str(e)}"}), 500
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
-
 @app.route('/api/chat', methods=['POST'])
 def chat_with_nexus():
     data = request.json
@@ -160,3 +157,8 @@ def chat_with_nexus():
     # 簡單模擬回傳
     ai_reply = f"NEXUS_CORE_ANALYZING: 收到訊息 '{user_msg}'。正在調用市場數據庫..."
     return jsonify({"reply": ai_reply})
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
+
+
