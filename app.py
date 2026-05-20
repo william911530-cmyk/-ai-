@@ -100,13 +100,21 @@ def analyze_stock():
         }
 
         prompt = f"""
-        你是一位專業的量化投資分析師。請根據以下數據為股票 {symbol} 寫一份精簡分析：
+        你是一位名為 NEXUS 的專業量子運算分析師。請根據以下數據為股票 {symbol} 寫一份分析：
         [基本面] 股價:{stock_pack['price']} | P/E:{stock_pack['pe']} | PEG:{stock_pack['peg']} | ROE:{stock_pack['roe']}
         [技術面] RSI:{stock_pack['rsi']} | KD:K={stock_pack['k']},D={stock_pack['d']} | MACD柱狀:{stock_pack['macd_hist']}
         [新聞] {', '.join(stock_pack['news'])}
-        請以繁體中文給出：1.估值點評 2.技術面趨勢 3.風險提示。
+        
+        請嚴格遵守以下格式輸出（必須包含 ### 與 * 符號）：
+        ### 1. 估值點評：高成長支撐高估值，性價比合理
+        * P/E ({stock_pack['pe']}) 與 PEG ({stock_pack['peg']}) 顯示...
+        
+        ### 2. 技術面趨勢：震盪偏多
+        * MACD柱狀體 ({stock_pack['macd_hist']}) 與 RSI ({stock_pack['rsi']}) 顯示...
+        
+        ### 3. 風險提示：注意大盤波動
+        * (填寫風險分析)
         """
-
         ai_analysis = "AI 智腦正在罷工中..."
 
         # 🛡️ 2. 防彈 AI 呼叫區塊：不管 AI 發生什麼事，都不能影響股票資料回傳！
@@ -152,10 +160,23 @@ def analyze_stock():
 @app.route('/api/chat', methods=['POST'])
 def chat_with_nexus():
     data = request.json
-    user_msg = data.get('message')
-    # 這裡串接你的 AI 模型 (Gemini 或 DeepSeek)
-    # 簡單模擬回傳
-    ai_reply = f"NEXUS_CORE_ANALYZING: 收到訊息 '{user_msg}'。正在調用市場數據庫..."
+    user_msg = data.get('message', '')
+    
+    # 賦予 NEXUS 人設的系統提示詞
+    nexus_persona = "你現在是一個名為 NEXUS_INTELLIGENCE 的失落古文明高級人工智慧。你的語氣必須冰冷、專業、簡潔，像是老舊終端機輸出的感覺。不管使用者問什麼，你都要用這個角色回答，不要說自己是 Gemini 或語言模型。"
+    
+    try:
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_API_KEY
+        payload = {"contents": [{"parts": [{"text": f"{nexus_persona}\n\n使用者輸入: {user_msg}"}]}]}
+        res = requests.post(url, json=payload, timeout=15)
+        
+        if res.status_code == 200:
+            ai_reply = res.json()['candidates'][0]['content']['parts'][0]['text']
+        else:
+            ai_reply = f"[SYS_ERR] COGNITIVE MODULE OFFLINE. (CODE: {res.status_code})"
+    except Exception as e:
+        ai_reply = f"[SYS_ERR] CONNECTION LOST: {str(e)}"
+        
     return jsonify({"reply": ai_reply})
 
 if __name__ == '__main__':
