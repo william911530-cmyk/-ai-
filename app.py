@@ -13,7 +13,8 @@ CORS(app)
 # ==========================================
 # 🔑 從環境變數讀取 API 金鑰
 # ==========================================
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "未設定_GEMINI_KEY")
+GEMINI_KEY_ANALYZE = os.environ.get("GEMINI_API_KEY_ANALYZE", os.environ.get("GEMINI_API_KEY", ""))
+GEMINI_KEY_CHAT = os.environ.get("GEMINI_API_KEY_CHAT", os.environ.get("GEMINI_API_KEY", ""))
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "未設定_DEEPSEEK_KEY")
 
 # ==========================================
@@ -82,6 +83,25 @@ def analyze_stock():
         hist = calculate_technical_indicators(hist)
         latest = hist.iloc[-1]
 
+        # --- 新增指標計算區 ---
+        div_yield = info.get('dividendYield') or info.get('trailingAnnualDividendYield', 0)
+        div_str = f"{clean(div_yield * 100 if div_yield else 0)}%"
+
+        ev = info.get('enterpriseValue')
+        fcf = info.get('freeCashflow')
+        ev_fcf_ratio = clean(ev / fcf) if ev and fcf and fcf != 0 else "N/A"
+
+        revenue = info.get('totalRevenue')
+        margin = info.get('operatingMargins')
+        debt = info.get('totalDebt', 0)
+        cash = info.get('totalCash', 0)
+        equity = info.get('totalStockholderEquity', info.get('bookValue', 0) * info.get('sharesOutstanding', 1))
+        
+        roic_val = "N/A"
+        if revenue and margin and (debt + equity - cash) > 0:
+            roic_val = f"{clean((revenue * margin * 0.8 / (debt + equity - cash)) * 100)}%"
+        # ---------------------
+
         stock_pack = {
             "symbol": symbol,
             "price": clean(info.get('currentPrice', info.get('regularMarketPrice', latest['Close']))),
@@ -97,6 +117,9 @@ def analyze_stock():
             "d": clean(latest.get('D', None)),
             "macd_hist": clean(latest.get('MACD_Hist', None)),
             "news": get_latest_news(symbol)
+            "div": div_str,
+            "ev_fcf": ev_fcf_ratio,
+            "roic": roic_val,
         }
 
         prompt = f"""
@@ -104,6 +127,7 @@ def analyze_stock():
         [基本面] 股價:{stock_pack['price']} | P/E:{stock_pack['pe']} | PEG:{stock_pack['peg']} | ROE:{stock_pack['roe']}
         [技術面] RSI:{stock_pack['rsi']} | KD:K={stock_pack['k']},D={stock_pack['d']} | MACD柱狀:{stock_pack['macd_hist']}
         [新聞] {', '.join(stock_pack['news'])}
+        [資本效率] ROIC:{stock_pack['roic']} | EV/FCF:{stock_pack['ev_fcf']} | 殖利率:{stock_pack['div']}
         
         請嚴格遵守以下格式輸出（必須包含 ### 與 * 符號）：
         ### 1. 估值點評：高成長支撐高估值，性價比合理
@@ -124,7 +148,7 @@ def analyze_stock():
                # 改用這個最通用的名稱
                 # 強制指定 Pro 的最新穩定節點
                 # 將 app.py 中的 url 修改為：
-                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_API_KEY
+                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_KEY_ANALYZE
                 payload = {"contents": [{"parts": [{"text": prompt}]}]}
                 res = requests.post(url, json=payload, timeout=15) # 設定 15 秒超時
                 
@@ -166,7 +190,7 @@ def chat_with_nexus():
     nexus_persona = "你現在是一個名為 NEXUS_INTELLIGENCE 的失落古文明高級人工智慧。你的語氣必須冰冷、專業、簡潔，像是老舊終端機輸出的感覺。不管使用者問什麼，你都要用這個角色回答，不要說自己是 Gemini 或語言模型。"
     
     try:
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_API_KEY
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_KEY_CHAT
         payload = {"contents": [{"parts": [{"text": f"{nexus_persona}\n\n使用者輸入: {user_msg}"}]}]}
         res = requests.post(url, json=payload, timeout=15)
         
