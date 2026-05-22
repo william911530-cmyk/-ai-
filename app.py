@@ -88,26 +88,285 @@ def analyze_stock():
         latest = hist.iloc[-1]
 
         # --- 新增指標計算區 (精準防彈計算，已拆解避免括號遺漏) ---
-        div_yield = info.get('dividendYield') or info.get('trailingAnnualDividendYield', 0)
-        div_str = f"{clean(div_yield * 100 if div_yield else 0)}%"
+       """
+股票指標計算模組 — 完整防彈改寫版
+改善項目：
+  1. ROIC 分母改為正確的 Invested Capital
+  2. 殖利率 0 與 N/A 語意分離
+  3. 全面排除髒數據（負值、極端值、None、NaN、Inf）
+  4. 每個指標獨立 try/except，單一失敗不影響其他
+  5. 新增 FCF Yield（自由現金流殖利率）作為 EV/FCF 的輔助驗證
+"""
 
-        ev = info.get('enterpriseValue')
-        fcf = info.get('freeCashflow')
-        ev_fcf_ratio = clean(ev / fcf) if ev and fcf and fcf != 0 else "N/A"
+import math
 
-        revenue = info.get('totalRevenue')
-        margin = info.get('operatingMargins')
-        debt = info.get('totalDebt', 0)
-        cash = info.get('totalCash', 0)
-        
-        # 拆分計算以確保語法安全
-        book_val = info.get('bookValue', 0)
-        shares = info.get('sharesOutstanding', 1)
-        equity = info.get('totalStockholderEquity', book_val * shares)
-        
-        roic_val = "N/A"
-        if revenue and margin and (debt + equity - cash) > 0:
-            roic_val = f"{clean((revenue * margin * 0.8 / (debt + equity - cash)) * 100)}%"
+
+# ──────────────────────────────────────────────
+# 工具函式
+# ──────────────────────────────────────────────
+
+def is_valid(val) -> bool:
+    """排除 None / NaN / Inf"""
+    if val is None:
+        return False
+    try:
+        f = float(val)
+        return math.isfinite(f)
+    except (TypeError, ValueError):
+        return False
+
+
+def is_positive(val) -> bool:
+    """排除 None / NaN / Inf / 零 / 負數"""
+    return is_valid(val) and float(val) > 0
+
+
+def is_non_negative(val) -> bool:
+    """排除 None / NaN / Inf / 負數，允許零"""
+    return is_valid(val) and float(val) >= 0
+
+
+def safe_float(val, fallback=None):
+    """安全轉 float，失敗回傳 fallback"""
+    if not is_valid(val):
+        return fallback
+    return float(val)
+
+
+def fmt_pct(val, decimals=2) -> str:
+    """數值 → 百分比字串，例如 0.1234 → '12.34%'"""
+    if not is_valid(val):
+        return "N/A"
+    return f"{float(val) * 100:.{decimals}f}%"
+
+
+def fmt_ratio(val, decimals=2) -> str:
+    """數值 → 倍數字串，例如 25.6 → '25.60x'"""
+    if not is_valid(val):
+        return "N/A"
+    return f"{float(val):.{decimals}f}x"
+
+
+def fmt_num(val, decimals=2) -> str:
+    """通用數值格式化"""
+    if not is_valid(val):
+        return "N/A"
+    return f"{float(val):.{decimals}f}"
+
+
+# ──────────────────────────────────────────────
+# 核心指標計算
+# ──────────────────────────────────────────────
+
+def calc_div_yield(info: dict) -> str:
+    """
+    股息殖利率
+    - 優先用 dividendYield，其次 trailingAnnualDividendYield
+    - 明確區分「不配息(N/A)」與「殖利率為0%」
+    - 合理範圍：0% ~ 30%（超過視為髒數據）
+    """
+    try:
+        raw = info.get('dividendYield') or info.get('trailingAnnualDividendYield')
+
+        # 明確不配息
+        if not is_valid(raw):
+            return "N/A"
+
+        val = float(raw)
+
+        # 排除負值與極端值（>30% 通常是資料錯誤）
+        if val < 0 or val > 0.30:
+            return "N/A"
+
+        # 真的是 0（股票存在但本期不配息）
+        if val == 0.0:
+            return "0.00%"
+
+        return f"{val * 100:.2f}%"
+
+    except Exception:
+        return "N/A"
+
+
+def calc_ev_fcf(info: dict) -> str:
+    """
+    EV / FCF（企業價值 / 自由現金流）
+    - FCF 為負時無意義，回傳 N/A
+    - 合理範圍：0x ~ 200x（科技成長股上限放寬）
+    """
+    try:
+        ev  = safe_float(info.get('enterpriseValue'))
+        fcf = safe_float(info.get('freeCashflow'))
+
+        if not is_positive(ev) or not is_positive(fcf):
+            return "N/A"
+
+        ratio = ev / fcf
+
+        # 極端值過濾（負 EV 或比值異常）
+        if ratio <= 0 or ratio > 500:
+            return "N/A"
+
+        return fmt_ratio(ratio)
+
+    except Exception:
+        return "N/A"
+
+
+def calc_fcf_yield(info: dict) -> str:
+    """
+    FCF Yield（自由現金流殖利率）= FCF / 市值
+    作為 EV/FCF 的輔助交叉驗證指標
+    合理範圍：-50% ~ 50%
+    """
+    try:
+        fcf        = safe_float(info.get('freeCashflow'))
+        market_cap = safe_float(info.get('marketCap'))
+
+        if not is_valid(fcf) or not is_positive(market_cap):
+            return "N/A"
+
+        yield_val = fcf / market_cap
+
+        if abs(yield_val) > 0.5:
+            return "N/A"
+
+        return fmt_pct(yield_val)
+
+    except Exception:
+        return "N/A"
+
+
+def calc_roic(info: dict) -> str:
+    """
+    ROIC = NOPAT / Invested Capital
+
+    NOPAT（稅後淨營業利潤）:
+        = Revenue × OperatingMargin × (1 - TaxRate)
+        稅率：優先用 info 內的有效稅率，fallback 為 21%
+
+    Invested Capital（已投入資本）:
+        = Total Assets - Current Liabilities
+        ※ 比 (Debt + Equity - Cash) 更準確，不與 EV 重疊
+
+    合理範圍：-50% ~ 200%（避免極端髒數據）
+    """
+    try:
+        revenue  = safe_float(info.get('totalRevenue'))
+        margin   = safe_float(info.get('operatingMargins'))
+
+        if not is_positive(revenue) or not is_valid(margin):
+            return "N/A"
+
+        # 稅率：有效稅率優先，異常時 fallback 21%
+        raw_tax = safe_float(info.get('effectiveTaxRate'))
+        if is_valid(raw_tax) and 0.0 <= raw_tax <= 0.60:
+            tax_rate = raw_tax
+        else:
+            tax_rate = 0.21
+
+        nopat = revenue * margin * (1 - tax_rate)
+
+        # Invested Capital = Total Assets - Current Liabilities
+        total_assets       = safe_float(info.get('totalAssets'))
+        current_liabilities = safe_float(info.get('currentLiabilities'))
+
+        if not is_positive(total_assets) or not is_non_negative(current_liabilities):
+            return "N/A"
+
+        invested_capital = total_assets - current_liabilities
+
+        if invested_capital <= 0:
+            return "N/A"
+
+        roic = nopat / invested_capital
+
+        # 過濾極端值
+        if roic < -0.5 or roic > 2.0:
+            return "N/A"
+
+        return fmt_pct(roic)
+
+    except Exception:
+        return "N/A"
+
+
+# ──────────────────────────────────────────────
+# 主打包函式（完整覆蓋原版 stock_pack）
+# ──────────────────────────────────────────────
+
+def build_stock_pack(symbol: str, info: dict, latest: dict, get_latest_news) -> dict:
+    """
+    組裝所有股票指標，每個欄位獨立防錯。
+    完整覆蓋原版 8 項 + 新增 3 項，並新增 fcf_yield。
+    """
+
+    def safe_clean(key, source=info):
+        """從 dict 安全取值並格式化"""
+        return fmt_num(source.get(key))
+
+    # 價格：多層 fallback
+    price_raw = (info.get('currentPrice')
+                 or info.get('regularMarketPrice')
+                 or latest.get('Close'))
+    price = fmt_num(price_raw)
+
+    # 52 週漲跌幅：應為 -1.0 ~ +∞，過濾極端值
+    change_52w_raw = safe_float(info.get('52WeekChange'))
+    change_52w = fmt_pct(change_52w_raw) if is_valid(change_52w_raw) and -1.0 <= change_52w_raw <= 10.0 else "N/A"
+
+    # Beta：合理 -5 ~ 10
+    beta_raw = safe_float(info.get('beta'))
+    beta = fmt_num(beta_raw) if is_valid(beta_raw) and -5 <= beta_raw <= 10 else "N/A"
+
+    # PE：正值且合理範圍（負 PE 無意義，>2000 為髒數據）
+    pe_raw = safe_float(info.get('trailingPE'))
+    pe = fmt_ratio(pe_raw) if is_valid(pe_raw) and 0 < pe_raw <= 2000 else "N/A"
+
+    # PEG：合理 -10 ~ 100
+    peg_raw = safe_float(info.get('pegRatio'))
+    peg = fmt_num(peg_raw) if is_valid(peg_raw) and -10 <= peg_raw <= 100 else "N/A"
+
+    # ROE：合理 -200% ~ 500%（金融槓桿股可能偏高）
+    roe_raw = safe_float(info.get('returnOnEquity'))
+    roe = fmt_pct(roe_raw) if is_valid(roe_raw) and -2.0 <= roe_raw <= 5.0 else "N/A"
+
+    # D/E：非負，>100 視為極端值
+    de_raw = safe_float(info.get('debtToEquity'))
+    de = fmt_num(de_raw) if is_valid(de_raw) and 0 <= de_raw <= 100 else "N/A"
+
+    # 技術指標
+    rsi_raw = safe_float(latest.get('RSI'))
+    rsi = fmt_num(rsi_raw) if is_valid(rsi_raw) and 0 <= rsi_raw <= 100 else "N/A"
+
+    k_raw = safe_float(latest.get('K'))
+    k = fmt_num(k_raw) if is_valid(k_raw) and 0 <= k_raw <= 100 else "N/A"
+
+    d_raw = safe_float(latest.get('D'))
+    d = fmt_num(d_raw) if is_valid(d_raw) and 0 <= d_raw <= 100 else "N/A"
+
+    macd_hist_raw = safe_float(latest.get('MACD_Hist'))
+    macd_hist = fmt_num(macd_hist_raw) if is_valid(macd_hist_raw) else "N/A"
+
+    return {
+        "symbol":    symbol,
+        "price":     price,
+        "change_52w": change_52w,
+        "beta":      beta,
+        "pe":        pe,
+        "peg":       peg,
+        "div":       calc_div_yield(info),       # 改寫版
+        "roe":       roe,
+        "de":        de,
+        "rsi":       rsi,
+        "k":         k,
+        "d":         d,
+        "macd_hist": macd_hist,
+        "ev_fcf":    calc_ev_fcf(info),          # 改寫版
+        "fcf_yield": calc_fcf_yield(info),        # 新增
+        "roic":      calc_roic(info),             # 改寫版（分母修正）
+        "news":      get_latest_news(symbol),
+    }
         # -----------------------------------
 
         # 2. 完美打包所有數據 (包含舊有 8 項與新增 3 項)
