@@ -60,51 +60,7 @@ def get_latest_news(ticker_symbol):
 def clean(val):
     return "N/A" if val is None or (isinstance(val, float) and math.isnan(val)) else round(val, 2) if isinstance(val, float) else val
 
-# ==========================================
-# ⚡ 即時串接路由器 (防彈強化版)
-# ==========================================
-# ==========================================
-# ⚡ 股票深度雷達掃描路由器 (請將這整個區塊直接覆蓋舊的 analyze_stock)
-# ==========================================
-@app.route('/api/analyze', methods=['POST'])
-def analyze_stock():
-    try:
-        req = request.json
-        symbol = req.get('symbol', '').upper()
-        ai_choice = req.get('ai_choice', 'gemini')
-
-        if symbol.isdigit() and len(symbol) == 4:
-            symbol += ".TW"
-
-        # 1. 抓取股票資料
-        tk = yf.Ticker(symbol)
-        info = tk.info
-        hist = tk.history(period="6mo")
-        
-        if hist.empty: 
-            return jsonify({"error": f"找不到股票數據: {symbol}"}), 404
-        
-        hist = calculate_technical_indicators(hist)
-        latest = hist.iloc[-1]
-
-        # --- 新增指標計算區 (精準防彈計算，已拆解避免括號遺漏) ---
-       """
-股票指標計算模組 — 完整防彈改寫版
-改善項目：
-  1. ROIC 分母改為正確的 Invested Capital
-  2. 殖利率 0 與 N/A 語意分離
-  3. 全面排除髒數據（負值、極端值、None、NaN、Inf）
-  4. 每個指標獨立 try/except，單一失敗不影響其他
-  5. 新增 FCF Yield（自由現金流殖利率）作為 EV/FCF 的輔助驗證
-"""
-
-import math
-
-
-# ──────────────────────────────────────────────
-# 工具函式
-# ──────────────────────────────────────────────
-
+#claude修改
 def is_valid(val) -> bool:
     """排除 None / NaN / Inf"""
     if val is None:
@@ -156,6 +112,9 @@ def fmt_num(val, decimals=2) -> str:
 
 # ──────────────────────────────────────────────
 # 核心指標計算
+# ──────────────────────────────────────────────
+# ──────────────────────────────────────────────
+# 工具函式
 # ──────────────────────────────────────────────
 
 def calc_div_yield(info: dict) -> str:
@@ -368,6 +327,53 @@ def build_stock_pack(symbol: str, info: dict, latest: dict, get_latest_news) -> 
         "news":      get_latest_news(symbol),
     }
         # -----------------------------------
+
+
+
+# ==========================================
+# ⚡ 即時串接路由器 (防彈強化版)
+# ==========================================
+# ==========================================
+# ⚡ 股票深度雷達掃描路由器 (請將這整個區塊直接覆蓋舊的 analyze_stock)
+# ==========================================
+@app.route('/api/analyze', methods=['POST'])
+def analyze_stock():
+    try:
+        req = request.json
+        symbol = req.get('symbol', '').upper()
+        ai_choice = req.get('ai_choice', 'gemini')
+
+        if symbol.isdigit() and len(symbol) == 4:
+            symbol += ".TW"
+
+        # 1. 抓取股票資料
+        tk = yf.Ticker(symbol)
+        info = tk.info
+        hist = tk.history(period="6mo")
+        
+        if hist.empty: 
+            return jsonify({"error": f"找不到股票數據: {symbol}"}), 404
+        
+        hist = calculate_technical_indicators(hist)
+        latest = hist.iloc[-1]
+
+        # --- 新增指標計算區 (精準防彈計算，已拆解避免括號遺漏) ---
+       """
+股票指標計算模組 — 完整防彈改寫版
+改善項目：
+  1. ROIC 分母改為正確的 Invested Capital
+  2. 殖利率 0 與 N/A 語意分離
+  3. 全面排除髒數據（負值、極端值、None、NaN、Inf）
+  4. 每個指標獨立 try/except，單一失敗不影響其他
+  5. 新增 FCF Yield（自由現金流殖利率）作為 EV/FCF 的輔助驗證
+"""     
+        # ==========================================
+        # 4️⃣ 在這裡計算所有需要的指標變數
+        # ==========================================
+        div_str = calc_div_yield(info)          # ✅ 定義
+        ev_fcf_ratio = calc_ev_fcf(info)        # ✅ 定義
+        roic_val = calc_roic(info)              # ✅ 定義
+
 
         # 2. 完美打包所有數據 (包含舊有 8 項與新增 3 項)
         stock_pack = {
