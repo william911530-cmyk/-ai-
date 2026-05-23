@@ -374,6 +374,15 @@ def analyze_stock():
         # Yahoo 的 debtToEquity 通常已經是百分比數字了，我們直接取用
         debteq_val = clean(info.get('debtToEquity'))
         # ----------------------
+
+        # 加入 debug prints
+        print(f"--- Debug for {symbol} ---")
+        print(f"Raw priceToBook: {info.get('priceToBook')}")
+        print(f"Raw bookValue: {info.get('bookValue')}")
+        print(f"Raw currentPrice: {info.get('currentPrice')}")
+        print(f"financialCurrency: {info.get('financialCurrency')}")
+        print(f"currency: {info.get('currency')}")
+        print(f"-------------------------")
     
 
         # ==========================================
