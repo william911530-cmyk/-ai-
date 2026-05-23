@@ -402,7 +402,6 @@ def analyze_stock():
             "ev_fcf": ev_fcf_ratio,
             "roic": roic_val,
             "news": get_latest_news(symbol)
-            # ... 其他你原本就在 stock_pack 裡面的資料 ...
             "yoy": yoy_str,
             "pb": pb_val,
             "net_margin": margin_str,
