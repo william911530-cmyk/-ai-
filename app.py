@@ -358,6 +358,22 @@ def analyze_stock():
         latest = hist.iloc[-1]
 
         # --- 新增指標計算區 (精準防彈計算，已拆解避免括號遺漏) ---
+        # --- 新增：生肉加工區 ---
+        # 1. 盈餘成長率 YOY (通常為小數，轉為百分比)
+        yoy_raw = info.get('earningsGrowth')
+        yoy_str = f"{clean(yoy_raw * 100 if yoy_raw else 0)}%"
+        
+        # 2. 淨利率 Net Margin (轉為百分比)
+        margin_raw = info.get('profitMargins')
+        margin_str = f"{clean(margin_raw * 100 if margin_raw else 0)}%"
+        
+        # 3. 股價淨值比 P/B
+        pb_val = clean(info.get('priceToBook'))
+        
+        # 4. 負債權益比 DEBT/EQ (有些公司叫 debtToEquity，數值通常是 120 代表 120%)
+        # Yahoo 的 debtToEquity 通常已經是百分比數字了，我們直接取用
+        debteq_val = clean(info.get('debtToEquity'))
+        # ----------------------
     
 
         # ==========================================
@@ -386,6 +402,11 @@ def analyze_stock():
             "ev_fcf": ev_fcf_ratio,
             "roic": roic_val,
             "news": get_latest_news(symbol)
+            # ... 其他你原本就在 stock_pack 裡面的資料 ...
+            "yoy": yoy_str,
+            "pb": pb_val,
+            "net_margin": margin_str,
+            "debt_eq": debteq_val,
         }
 
         # 3. 組合 Prompt 給 AI (加入資本效率)
