@@ -401,7 +401,7 @@ def analyze_stock():
             "macd_hist": clean(latest.get('MACD_Hist', None)),
             "ev_fcf": ev_fcf_ratio,
             "roic": roic_val,
-            "news": get_latest_news(symbol)
+            "news": get_latest_news(symbol),
             "yoy": yoy_str,
             "pb": pb_val,
             "net_margin": margin_str,
