@@ -60,7 +60,7 @@ def get_latest_news(ticker_symbol):
 def clean(val):
     return "N/A" if val is None or (isinstance(val, float) and math.isnan(val)) else round(val, 2) if isinstance(val, float) else val
 
-#claude修改
+# claude核心數據取得與計算優化
 def is_valid(val) -> bool:
     """排除 None / NaN / Inf"""
     if val is None:
@@ -304,6 +304,25 @@ def calc_pb_safe(info: dict) -> str:
     return clean(pb)   # 你自己定義的 clean 函數
 
 
+
+#deepseek 髒數優化
+def clean_number(value, default=0.0, min_val=None, max_val=None):
+    if value is None:
+        return default
+    try:
+        num = float(value)
+        if math.isnan(num) or math.isinf(num):
+            return default
+        if min_val is not None and num < min_val:
+            return default
+        if max_val is not None and num > max_val:
+            return default
+        return num
+    except (ValueError, TypeError):
+        return default
+
+
+
 # ──────────────────────────────────────────────
 # 主打包函式（完整覆蓋原版 stock_pack）
 # ──────────────────────────────────────────────
@@ -445,6 +464,27 @@ def analyze_stock():
         div_str = calc_div_yield(info)          # ✅ 定義
         ev_fcf_ratio = calc_ev_fcf(info)        # ✅ 定義
         roic_val = calc_roic(info)              # ✅ 定義
+
+        # Deepseek 髒數區優化
+        # 原始值
+        yoy_raw = info.get('earningsGrowth')
+        margin_raw = info.get('profitMargins')
+        pb_raw = info.get('priceToBook')
+        debteq_raw = info.get('debtToEquity')
+
+        # 清洗並格式化
+        yoy_clean = clean_number(yoy_raw, default=None)
+        yoy_str = f"{yoy_clean * 100:.2f}%" if yoy_clean is not None else "N/A"
+
+        margin_clean = clean_number(margin_raw, default=None)
+        margin_str = f"{margin_clean * 100:.2f}%" if margin_clean is not None else "N/A"
+
+        pb_val = clean_number(pb_raw, default=None, min_val=0, max_val=30)
+        pb_str = f"{pb_val:.2f}" if pb_val is not None else "N/A"
+
+        debteq_val = clean_number(debteq_raw, default=None, min_val=0, max_val=1000)
+        debteq_str = f"{debteq_val:.2f}%" if debteq_val is not None else "N/A"
+
 
 
         # 2. 完美打包所有數據 (包含舊有 8 項與新增 3 項)
