@@ -430,6 +430,12 @@ def analyze_stock():
         hist = calculate_technical_indicators(hist)
         latest = hist.iloc[-1]
 
+        # 線圖
+        # 提取過去 30 天的收盤價與日期，準備給前端畫圖
+        chart_dates = hist.index.strftime('%m-%d').tolist()[-30:]
+        chart_prices = [clean(p) for p in hist['Close'].tolist()[-30:]]
+        
+
         # --- 新增指標計算區 (精準防彈計算，已拆解避免括號遺漏) ---
         # --- 新增：生肉加工區 ---
         # 1. 盈餘成長率 YOY (通常為小數，轉為百分比)
@@ -509,6 +515,8 @@ def analyze_stock():
             "pb": pb_val,
             "net_margin": margin_str,
             "debt_eq": debteq_val,
+            "chart_dates": chart_dates,
+            "chart_prices": chart_prices,
         }
 
         # 3. 組合 Prompt 給 AI (加入資本效率)
