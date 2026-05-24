@@ -249,6 +249,60 @@ def calc_roic(info: dict) -> str:
     except Exception:
         return "N/A"
 
+# 匯率bug除錯
+_fx_cache = {}
+
+def get_fx_rate(from_currency: str, to_currency: str) -> float | None:
+    """取得 1 from_currency = ? to_currency"""
+    if from_currency.upper() == to_currency.upper():
+        return 1.0
+    pair = f"{from_currency}{to_currency}"
+    if pair in _fx_cache:
+        return _fx_cache[pair]
+    try:
+        # 用 yfinance 抓貨幣對，例如 USDTWD=X
+        ticker = yf.Ticker(f"{from_currency}{to_currency}=X")
+        hist = ticker.history(period="1d")
+        if not hist.empty:
+            rate = hist['Close'].iloc[-1]
+            _fx_cache[pair] = rate
+            return rate
+    except:
+        pass
+    # fallback: 使用免費匯率 API（可自行替換）
+    try:
+        url = f"https://api.exchangerate-api.com/v4/latest/{from_currency}"
+        res = requests.get(url, timeout=5).json()
+        rate = res['rates'].get(to_currency.upper())
+        if rate:
+            _fx_cache[pair] = rate
+            return rate
+    except:
+        pass
+    return None
+
+def calc_pb_safe(info: dict) -> str:
+    price = info.get('currentPrice') or info.get('regularMarketPrice')
+    bv = info.get('bookValue')
+
+    if not (is_valid(price) and is_valid(bv) and bv > 0):
+        return "N/A"
+
+    trade_curr = info.get('currency', '')
+    fin_curr = info.get('financialCurrency', '')
+
+    if trade_curr and fin_curr and trade_curr.upper() != fin_curr.upper():
+        # 將 bookValue 由 fin_curr 轉換為 trade_curr
+        rate = get_fx_rate(fin_curr, trade_curr)
+        if rate is None:
+            return "N/A"  # 無法取得匯率就放棄
+        bv_converted = bv * rate
+    else:
+        bv_converted = bv
+
+    pb = price / bv_converted
+    return clean(pb)   # 你自己定義的 clean 函數
+
 
 # ──────────────────────────────────────────────
 # 主打包函式（完整覆蓋原版 stock_pack）
