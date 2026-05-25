@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import math
 import os
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -401,6 +402,21 @@ def build_stock_pack(symbol: str, info: dict, latest: dict, get_latest_news) -> 
     }
         # -----------------------------------
 
+# Deepseek 重試函數更新
+# ⚡ 带重试的 Yahoo 数据获取（避免 Rate limited）
+def fetch_stock_data(symbol, retries=3, delay=1):
+    for i in range(retries):
+        try:
+            tk = yf.Ticker(symbol)
+            info = tk.info
+            hist = tk.history(period="6mo")
+            return tk, info, hist
+        except Exception as e:
+            if "Rate limited" in str(e) and i < retries - 1:
+                time.sleep(delay * (2 ** i))  # 1秒, 2秒, 4秒...
+                continue
+            raise  # 其他错误或重试用完，还是抛出
+
 
 
 # ==========================================
@@ -419,10 +435,11 @@ def analyze_stock():
         if symbol.isdigit() and len(symbol) == 4:
             symbol += ".TW"
 
-        # 1. 抓取股票資料
-        tk = yf.Ticker(symbol)
-        info = tk.info
-        hist = tk.history(period="6mo")
+        # 1. 抓取股票資料（自动重试）
+        try:
+            tk, info, hist = fetch_stock_data(symbol)
+        except Exception as yf_err:
+            return jsonify({"error": f"Yahoo Finance 暫時無法存取，請稍後再試: {str(yf_err)}"}), 503
         
         if hist.empty: 
             return jsonify({"error": f"找不到股票數據: {symbol}"}), 404
