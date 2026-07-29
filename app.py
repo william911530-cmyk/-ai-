@@ -9,7 +9,7 @@ import os
 import time
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # ==========================================
 # 🔑 從環境變數讀取 API 金鑰
